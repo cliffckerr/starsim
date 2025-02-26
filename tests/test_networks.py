@@ -92,6 +92,13 @@ def test_erdosrenyi():
         f_obs = np.histogram(counts, bins=bins)[0] # Form the degree distribution
         pp = sps.binom.pmf(bins[:-1], n=n, p=p) # Computed the theoretical probability distribution
         f_exp = f_obs.sum()*pp / pp.sum() # Scale
+        
+        # Filter out zero values to avoid division by zero warning
+        mask = f_exp > 0
+        if not np.all(mask):
+            f_obs = f_obs[mask]
+            f_exp = f_exp[mask]
+            
         p_value = sps.chisquare(f_obs, f_exp).pvalue # Compute the X2 p-value
         assert not p_value < alpha
         return p_value
