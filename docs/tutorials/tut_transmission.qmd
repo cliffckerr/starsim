@@ -1,0 +1,208 @@
+---
+title: Tut Transmission
+format:
+  html:
+    code-fold: false
+jupyter: python3
+---
+
+```{python}
+#| echo: true
+#| eval: true
+
+import starsim as ss
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Make random network
+random = ss.RandomNet()
+
+net = ss.RandomNet()
+sir = ss.SIR()
+sim = ss.Sim(n_agents=100, diseases=sir, networks=net) # Decreasing n_agents so we can plot the network below
+sim.init()
+
+sim.networks.randomnet
+
+net = sim.networks.randomnet
+
+# Use the "find_contacts" function to find all contacts of agent with uid 0
+contacts_of_agent_0 = net.find_contacts([0])
+print('The following agents were identified as contacts of agent 0:', contacts_of_agent_0)
+
+# Convert to a pandas DataFrame and manually find all edges involving agent with uid 0
+df = net.to_df()
+uid0_edges = df.loc[(df['p1']==0) | (df['p2']==0)]
+print('\nEdges involving UID 0 extracted from the edge list data frame:')
+display(uid0_edges)
+
+import networkx as nx
+G = net.to_graph()
+nx.draw(G, with_labels=True)
+
+# Create the disease
+syph = ss.Syphilis(
+    beta = {'mf': [0.25, 0.15]},    # See notes below 
+)
+
+# Create a heterosexual network
+mf = ss.MFNet(
+    duration=1/24,  # Using very short relationships so that we get more transmission 
+    acts=80,        # Distribution of the number of coital acts/year
+)
+
+pars = dict(start=2000, dur=20, dt=1/12)
+sim = ss.Sim(pars=pars, diseases=syph, networks=mf)
+
+syph = ss.Syphilis(
+    beta = {'mf': [0.25, 0.15], 'maternal': [0.99, 0]}
+)
+
+# Make demographic modules
+pregnancy = ss.Pregnancy(fertility_rate=20)
+death = ss.Deaths(death_rate=15)
+
+# Make maternal network
+maternal = ss.MaternalNet()
+
+# Make sim
+sim = ss.Sim(pars=pars, diseases=syph, networks=[mf, maternal], demographics=[pregnancy, death], dur=10)
+sim.run().plot(show_module=False)
+
+class age_mf(ss.MFNet):
+    def add_pairs(self, people, ti=None):
+        # Custom code to select pairs based on age
+        return 
+
+# Transmission using a mixing pool
+mp = ss.MixingPool(beta=ss.beta(0.1), contacts=ss.poisson(lam=3)) # A single mixing pool
+sir = ss.SIR() # Beta doesn't matter, that's just for networks
+sim1 = ss.Sim(diseases=sir, networks=mp, verbose=0, label='Mixing Pool')
+
+# Transmission using a network
+net = ss.RandomNet(n_contacts=ss.poisson(lam=3))
+sir = ss.SIR(beta=ss.beta(0.1))
+sim2 = ss.Sim(diseases=sir, networks=net, verbose=0, label='Contact Network')
+
+msim = ss.MultiSim([sim1, sim2]).run()
+msim.plot()
+
+mp = ss.MixingPool(
+    diseases = 'sir', # Use this pool only for SIR, not other diseases (HIV in this example)
+    src = lambda sim: sim.people.age < 15, # Infection sources will be agents under age 15
+    dst = ss.AgeGroup(low=15, high=None), # Here demonstrating the AgeGroup class, identical to lambda sim: sim.people.age >= 15
+    contacts = ss.poisson(lam=2), # Contacts will be poisson distributed with a mean of 2
+    beta = ss.beta(0.2), # And we set beta to 0.2, automatically adjusting for time units via the ss.beta wrapper
+)
+sim = ss.Sim(diseases=['sir', 'hiv'], networks=mp) # Two diseases, only "sir" will have transmission
+sim.run()
+sim.plot()
+
+lows = np.arange(0, 80, 5)
+groups = ss.ndict([ss.AgeGroup(low=low, high=low+5) for low in lows[:-1]])
+groups.append(ss.AgeGroup(low=lows[-1], high=None)) # 80+
+n_groups = len(groups)
+
+# Let's create a random contact matrix. If using contact matrices from Prem et al., put data here.
+cm = np.random.random((n_groups, n_groups)) + 3*np.diag(np.random.rand(n_groups))
+
+print('The first axis (rows) of the contact matrix is the SOURCE group')
+print('The second axis (columns) of the contact matrix is the DESTINATION group')
+plt.imshow(cm)
+
+mps = ss.MixingPools(
+    contacts = cm,
+    beta = ss.beta(0.2),
+    src = groups,
+    dst = groups,
+)
+
+# Track new infections by age using an Analyzer, you'll learn about these in a subsequent tutorial
+class New_Infections_By_Age(ss.Analyzer):
+    def __init__(self, bins, **kwargs):
+        super().__init__(**kwargs)
+        self.bins = bins
+
+    def init_post(self):
+        super().init_post()
+        self.new_cases = np.zeros((len(self), len(self.bins)-1))
+
+    def step(self):
+        new_inf = self.sim.diseases.sir.ti_infected == self.ti
+        if not new_inf.any(): return
+        self.new_cases[self.ti, :] = np.histogram(self.sim.people.age[new_inf], bins=self.bins)[0]
+
+    def plot(self):
+        fig, ax = plt.subplots()
+        ax.set_prop_cycle('color', plt.cm.nipy_spectral(np.linspace(0, 1, len(self.bins))))
+
+        for i, (b1, b2) in enumerate(zip(self.bins[:-1], self.bins[1:])):
+            ax.plot(self.timevec, self.new_cases[:,i], label=f'Age {b1}-{b2}')
+        ax.legend(); ax.set_xlabel('Year'); ax.set_ylabel('New Infections')
+
+az = New_Infections_By_Age(np.concatenate([lows, [1000]]))
+
+sir = ss.SIR()
+sim = ss.Sim(diseases=sir, networks=mps, analyzers=az, dur=5, dt=1/4, n_agents=1000, verbose=0)
+sim.run()
+sim.analyzers[0].plot()
+print('↑ The default age distribution is uniform, so the 75+ group contains many more people than the other age groups, explaining the larger number of new infections.')
+
+from enum import IntEnum
+class SES(IntEnum):
+    LOW = 0
+    MID = 1
+    HIGH = 2
+
+# Create 5,000 people adding 50% LOW, 30% MID, and 20% HIGH SES
+ses = ss.FloatArr('ses', default=ss.choice(a=[SES.LOW, SES.MID, SES.HIGH], p=[0.5, 0.3, 0.2]))
+ppl = ss.People(n_agents=5_000, extra_states=ses)
+
+# Create the mixing pools, note that the contact matrix need not be symmetric
+mps = ss.MixingPools(
+    src = {s.name: lambda sim, s=s: ss.uids(sim.people.ses == s) for s in [SES.LOW, SES.MID, SES.HIGH]},
+    dst = {s.name: lambda sim, s=s: ss.uids(sim.people.ses == s) for s in [SES.LOW, SES.MID]}, # People in the HIGH group have not route to acquire new infections, for demonstration purposes here
+
+    # src on rows (1st dimension), dst on cols (2nd dimension)
+    contacts = np.array([
+        [2.50, 0.00], # LOW->LOW,  LOW->MID
+        [0.05, 1.75], # MID->LOW,  MID->MID
+        [0.00, 0.15], # HIGH->LOW, HIGH->MID
+    ]),
+
+    beta = ss.beta(0.2),
+)
+
+# Create an analyzer to track results by SES group
+class New_Infections_By_SES(ss.Analyzer):
+    def init_results(self):
+        self.new_cases = np.zeros((len(self), len(SES)))
+
+    def step(self):
+        new_inf = self.sim.diseases.sir.ti_infected == self.ti
+        if not new_inf.any():
+            return
+
+        for ses in SES:
+            self.new_cases[self.ti, ses] = np.count_nonzero(new_inf & (self.sim.people.ses==ses))
+
+az = New_Infections_By_SES()
+
+def seeding(self, sim, uids):
+    p = np.zeros(len(uids))
+    high_ses = ss.uids(sim.people.ses == SES.HIGH)
+    p[high_ses] = 0.1 # Seed infections into 10% of SES HIGH
+    return p
+sir = ss.SIR(init_prev = ss.bernoulli(p=seeding)) # The probability of being selected as a seed is determined on a per-agent basis by the above 'seeding' function
+
+sim = ss.Sim(people=ppl, diseases=sir, networks=mps, analyzers=az, dt=1/12, dur=35, verbose=0)
+sim.run()
+
+
+fig, ax = plt.subplots()
+new_cases = sim.analyzers[0].new_cases
+for ses in [SES.LOW, SES.MID, SES.HIGH]:
+    ax.plot(sim.results.timevec, new_cases[:,ses], label=ses.name)
+ax.legend(); ax.set_xlabel('Year'); ax.set_ylabel('New Infections')
+plt.show()
+```

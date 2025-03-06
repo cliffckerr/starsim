@@ -1,0 +1,34 @@
+---
+title: Tut Intro
+format:
+  html:
+    code-fold: false
+jupyter: python3
+---
+
+```{python}
+#| echo: true
+#| eval: true
+
+import starsim as ss
+
+# Define the parameters
+pars = dict(
+    n_agents = 10_000,    # Number of agents to simulate
+    networks = dict(      # *Networks* add detail on how the agents interact with each other 
+        type = 'random',  # Here, we use a 'random' network
+        n_contacts = 10   # Each person has an average of 10 contacts with other people
+    ),
+    diseases = dict(      # *Diseases* add detail on what diseases to model 
+        type = 'sir',     # Here, we're creating an SIR disease 
+        init_prev = 0.01, # Proportion of the population initially infected 
+        beta = 0.05,      # Probability of transmission between contacts
+    )
+)
+
+# Make the sim, run and plot
+sim = ss.Sim(pars)
+sim.run()
+sim.plot()
+sim.diseases.sir.plot()
+```

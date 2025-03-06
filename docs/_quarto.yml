@@ -48,6 +48,10 @@ format:
     code-copy: true
     code-tools: true
     highlight-style: github
+    execute:
+      enabled: true
+      echo: true
+      warning: false
 
 quartodoc:
   package: starsim

@@ -6,17 +6,17 @@ title: Tutorials
 
 ## User tutorials
 
-- [Introduction to Starsim](tutorials/tut_intro.ipynb)
-- [Building a simulation](tutorials/tut_buildsim.ipynb)
-- [Demographics](tutorials/tut_demographics.ipynb)
-- [Diseases](tutorials/tut_diseases.ipynb)
-- [Transmission](tutorials/tut_transmission.ipynb)
-- [Interventions](tutorials/tut_interventions.ipynb)
-- [Calibration](tutorials/tut_calibration.ipynb)
+- [Introduction to Starsim](tutorials/tut_intro.qmd)
+- [Building a simulation](tutorials/tut_buildsim.qmd)
+- [Demographics](tutorials/tut_demographics.qmd)
+- [Diseases](tutorials/tut_diseases.qmd)
+- [Transmission](tutorials/tut_transmission.qmd)
+- [Interventions](tutorials/tut_interventions.qmd)
+- [Calibration](tutorials/tut_calibration.qmd)
 
 ## Developer tutorials
 
-- [Diseases (developer)](tutorials/dev_tut_diseases.ipynb)
-- [Parameters (developer)](tutorials/dev_tut_pars.ipynb)
-- [Analyzers (developer)](tutorials/dev_tut_analyzers.ipynb)
-- [Non-standard features (developer)](tutorials/dev_tut_nonstandard.ipynb)
+- [Diseases (developer)](tutorials/dev_tut_diseases.qmd)
+- [Parameters (developer)](tutorials/dev_tut_pars.qmd)
+- [Analyzers (developer)](tutorials/dev_tut_analyzers.qmd)
+- [Non-standard features (developer)](tutorials/dev_tut_nonstandard.qmd)

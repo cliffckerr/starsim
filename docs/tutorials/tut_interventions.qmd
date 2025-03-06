@@ -1,0 +1,58 @@
+---
+title: Tut Interventions
+format:
+  html:
+    code-fold: false
+jupyter: python3
+---
+
+```{python}
+#| echo: true
+#| eval: true
+
+import starsim as ss
+
+pars = dict(
+    n_agents = 5_000,
+    birth_rate = 20,
+    death_rate = 15,
+    networks = dict(
+        type = 'randomnet', # Or 'random'
+        n_contacts = 4
+    ),
+    diseases = dict(
+        type = 'sir',
+        dur_inf = 10,
+        beta = 0.1,
+    )
+)
+
+# Create the product - a vaccine with 50% efficacy
+my_vaccine = ss.sir_vaccine(efficacy=0.5)
+
+# Create the intervention
+my_intervention = ss.routine_vx(
+    start_year=2015,    # Begin vaccination in 2015
+    prob=0.2,           # 20% coverage
+    product=my_vaccine   # Use the MyVaccine product
+)
+
+# Now create two sims: a baseline sim and one with the intervention
+sim_base = ss.Sim(pars=pars)
+sim_base.run()
+sim_intv = ss.Sim(pars=pars, interventions=my_intervention)
+sim_intv.run()
+
+import matplotlib.pyplot as plt
+
+res_base = sim_base.results
+res_intv = sim_intv.results
+
+plt.figure()
+plt.plot(res_base.timevec, res_base.sir.prevalence, label='Baseline')
+plt.plot(res_intv.timevec, res_intv.sir.prevalence, label='Vax')
+plt.axvline(x=2015, color='k', ls='--')
+plt.title('Prevalence')
+plt.legend()
+plt.show()
+```

@@ -1,0 +1,201 @@
+---
+title: Tut Calibration
+format:
+  html:
+    code-fold: false
+jupyter: python3
+---
+
+```{python}
+#| echo: true
+#| eval: true
+
+#%% Imports and settings
+import sciris as sc
+import starsim as ss
+import numpy as np
+import pandas as pd
+import matplotlib.dates as mdates
+
+n_agents = 2e3
+debug = False # If true, will run in serial
+
+def make_sim():
+    sir = ss.SIR(
+        beta = ss.beta(0.075),
+        init_prev = ss.bernoulli(0.02),
+    )
+    random = ss.RandomNet(n_contacts=ss.poisson(4))
+
+    sim = ss.Sim(
+        n_agents = n_agents,
+        start = sc.date('2020-01-01'),
+        stop = sc.date('2020-02-12'),
+        dt = 1,
+        unit = 'day',
+        diseases = sir,
+        networks = random,
+        verbose = 0,
+    )
+
+    return sim
+
+# Define the calibration parameters
+calib_pars = dict(
+    beta = dict(low=0.01, high=0.30, guess=0.15, suggest_type='suggest_float', log=True), # Note the log scale
+    init_prev = dict(low=0.01, high=0.05, guess=0.15), # Default type is suggest_float, no need to re-specify
+    n_contacts = dict(low=2, high=10, guess=3, suggest_type='suggest_int'), # Suggest int just for this demo
+)
+
+def build_sim(sim, calib_pars, n_reps=1, **kwargs):
+    """
+    Modify the base simulation by applying calib_pars. The result can be a
+    single simulation or multiple simulations if n_reps>1. Note that here we are
+    simply building the simulation by modifying the base sim. Running the sims
+    and extracting results will be done by the calibration function.
+    """
+
+    sir = sim.pars.diseases # There is only one disease in this simulation and it is a SIR
+    net = sim.pars.networks # There is only one network in this simulation and it is a RandomNet
+
+    for k, pars in calib_pars.items(): # Loop over the calibration parameters
+        if k == 'rand_seed':
+            sim.pars.rand_seed = v
+            continue
+
+        # Each item in calib_pars is a dictionary with keys like 'low', 'high',
+        # 'guess', 'suggest_type', and importantly 'value'. The 'value' key is
+        # the one we want to use as that's the one selected by the algorithm
+        v = pars['value']
+        if k == 'beta':
+            sir.pars.beta = ss.beta(v)
+        elif k == 'init_prev':
+            sir.pars.init_prev = ss.bernoulli(v)
+        elif k == 'n_contacts':
+            net.pars.n_contacts = ss.poisson(v)
+        else:
+            raise NotImplementedError(f'Parameter {k} not recognized')
+
+    # If just one simulation per parameter set, return the single simulation
+    if n_reps == 1:
+        return sim
+
+    # But if you'd like to run multiple simulations with the same parameters, we return a MultiSim instead
+    # Note that each simulation will have a different random seed, you can set specific seeds if you like
+    # Also note that parallel=False and debug=True are important to avoid issues with parallelism in the calibration
+    # Advanced: If running multiple reps, you can choose if/how they are combined using the "combine_reps" argument to each CalibComponent, introduced below.
+    ms = ss.MultiSim(sim, iterpars=dict(rand_seed=np.random.randint(0, 1e6, n_reps)), initialize=True, debug=True, parallel=False)
+    return ms
+
+prevalence = ss.Normal(
+    name = 'Disease prevalence',
+    conform = 'prevalent',
+
+    expected = pd.DataFrame({
+        'x': [0.13, 0.16, 0.06],    # Prevalence of infection
+    }, index=pd.Index([ss.date(d) for d in ['2020-01-12', '2020-01-25', '2020-02-02']], name='t')), # On these dates
+    
+    extract_fn = lambda sim: pd.DataFrame({
+        'x': sim.results.sir.prevalence,
+    }, index=pd.Index(sim.results.timevec, name='t')),
+
+    # You can specify the variance as well, but it's optional (max likelihood estimates will be used if not provided)
+    # This could be a single float or an array with the same shape as the expected values
+    sigma2 = 0.05, # e.g. (num_replicates/sigma2_model + 1/sigma2_data)^-1
+    #sigma2 = np.array([0.05, 0.25, 0.01])
+)
+
+sc.heading('Beginning calibration')
+
+# Make the sim and data
+sim = make_sim()
+
+# Make the calibration
+calib = ss.Calibration(
+    calib_pars = calib_pars,
+    sim = sim,
+    build_fn = build_sim,
+    build_kw = dict(n_reps=3), # Run 3 replicates for each parameter set
+    reseed = True, # If true, a different random seed will be provided to each configuration
+    components = [prevalence],
+    total_trials = 100,
+    n_workers = None, # None indicates to use all available CPUs
+    die = True,
+    debug = debug, # Run in serial if True
+)
+
+# Perform the calibration
+sc.printcyan('\nPeforming calibration...')
+calib.calibrate();
+
+calib.best_pars
+
+# Confirm - Note the comparison is here configured over n_reps=15 replicates
+sc.printcyan('\nConfirming fit...')
+
+# Increase replicates to 15 for more representative results when running check_fit
+calib.build_kw['n_reps'] = 15
+
+calib.check_fit(do_plot=False)
+
+calib.plot();
+
+calib.plot(bootstrap=True); # Pass bootstrap=True to produce this plot
+
+g = calib.plot_final(); # Run the model for build_kw['n_reps'] = 15 replicates
+for ax in g.axes: # Fix the date formatting
+    ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(ax.xaxis.get_major_locator()))
+
+calib.plot_optuna('plot_optimization_history'); # Plot the optimization history
+
+calib.plot_optuna('plot_contour');
+
+calib.plot_optuna('plot_param_importances');
+
+my_data = (ss.date('2020-01-12'), 0.13)
+
+def eval(sim, expected):
+    # Compute the squared error at one point in time.
+    # expected will contain my_data in this example due to eval_kw
+    date, p = expected
+    if not isinstance(sim, ss.MultiSim):
+        sim = ss.MultiSim(sims=[sim])
+
+    ret = 0
+    for s in sim.sims:
+        ind = np.searchsorted(s.results.timevec, date, side='left')
+        prev = s.results.sir.prevalence[ind]
+        ret += (prev - p)**2
+    return ret
+
+
+# Define the calibration parameters
+calib_pars = dict(
+    beta = dict(low=0.01, high=0.30, guess=0.15, suggest_type='suggest_float', log=True),
+)
+
+# Make the sim and data
+sim = make_sim()
+
+# Make the calibration
+calib = ss.Calibration(
+    calib_pars = calib_pars,
+    sim = sim,
+    build_fn = build_sim,
+    build_kw = dict(n_reps=2), # Two reps per point
+    reseed = True,
+    eval_fn = eval, # Will call my_function(msim, eval_kwargs)
+    eval_kw = dict(expected=my_data), # Will call eval(sim, **eval_kw)
+    total_trials = 10,
+    n_workers = None, # None indicates to use all available CPUs
+    die = True,
+    debug = debug,
+)
+
+# Perform the calibration
+sc.printcyan('\nPeforming calibration...')
+calib.calibrate()
+
+# Check
+calib.check_fit()
+```

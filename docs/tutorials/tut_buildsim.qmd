@@ -1,0 +1,57 @@
+---
+title: Tut Buildsim
+format:
+  html:
+    code-fold: false
+jupyter: python3
+---
+
+```{python}
+#| echo: true
+#| eval: true
+
+import starsim as ss
+
+# Define the parameters
+pars = dict(
+    n_agents = 5_000,     # Number of agents to simulate
+    networks = dict(      # *Networks* add detail on how the agents interact with each other 
+        type = 'random',  # Here, we use a 'random' network
+        n_contacts = 4    # Each person has an average of 4 contacts with other people
+    ),
+    diseases = dict(      # *Diseases* add detail on what diseases to model 
+        type = 'sir',     # Here, we're creating an SIR disease 
+        init_prev = 0.1,  # Proportion of the population initially infected 
+        beta = 0.1,       # Probability of transmission between contacts
+    )
+)
+
+# Make the sim, run and plot
+sim = ss.Sim(pars)
+sim.run()
+sim.plot()
+
+people = ss.People(n_agents=5_000)
+network = ss.RandomNet(pars=dict(n_contacts=4))
+sir = ss.SIR(init_prev=0.1, beta=0.1)
+sim = ss.Sim(diseases=sir, people=people, networks=network)
+sim.run()
+sim.plot()
+
+network = ss.RandomNet(pars={'n_contacts': ss.poisson(4)})
+network = ss.RandomNet(n_contacts=dict(type='poisson', lam=4))
+
+sim = ss.Sim(start='2020-01-01', stop='2021-01-01', unit='month', diseases='sis', networks=network)  # Simulate from 2020 for 1 year with a monthly timestep
+sim.run().plot()
+
+sim.save('example.sim')
+new_sim = ss.load('example.sim')
+
+sim.save('example-big.sim', shrink=False)
+
+df = sim.to_df()
+ss.save('example.df', df)
+new_df = ss.load('example.df')
+
+df.to_excel('example.xlsx')
+```

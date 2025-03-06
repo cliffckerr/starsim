@@ -1,0 +1,72 @@
+---
+title: Tut Demographics
+format:
+  html:
+    code-fold: false
+jupyter: python3
+---
+
+```{python}
+#| echo: true
+#| eval: true
+
+import starsim as ss
+
+pars = dict(
+    birth_rate = 20,      # Annual crude birth rate (per 1000 people)
+    death_rate = 15,      # Annual crude death rate (per 1000 people)
+    networks = 'random',
+    diseases = 'sir'
+)
+sim = ss.Sim(pars)
+
+demographics = [
+    ss.Births(birth_rate=20),
+    ss.Deaths(death_rate=15)
+]
+sim = ss.Sim(demographics=demographics)
+
+ss.Sim(demographics=True).run().plot();
+
+demographics = [
+    ss.Births(pars={'birth_rate': 20}),
+    ss.Deaths(pars={'death_rate': 15})
+]
+sim = ss.Sim(pars={'total_pop': 200e6, 'n_agents': 50e3}, demographics=demographics)
+
+import starsim as ss
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Read in age-specific fertility rates
+fertility_rates = pd.read_csv('test_data/nigeria_asfr.csv')
+pregnancy = ss.Pregnancy(pars={'fertility_rate': fertility_rates})
+
+death_rates = pd.read_csv('test_data/nigeria_deaths.csv')
+death = ss.Deaths(pars={'death_rate': death_rates, 'rate_units': 1})
+
+demographics = [pregnancy, death]
+
+# Make people using the distribution of the population by age/sex in 1995
+n_agents = 5_000
+nga_pop_1995 = 106819805  # Population of Nigeria in 1995, the year we will start the model
+age_data = pd.read_csv('test_data/nigeria_age.csv')
+ppl = ss.People(n_agents, age_data=age_data)
+
+# Make the sim, run and plot
+sim = ss.Sim(total_pop=nga_pop_1995, start=1995, people=ppl, demographics=demographics, networks='random', diseases='sir')
+sim.run()
+
+# Read in a file with the actual population size
+nigeria_popsize = pd.read_csv('test_data/nigeria_popsize.csv')
+data = nigeria_popsize[(nigeria_popsize.year >= 1995) & (nigeria_popsize.year <= 2030)]
+
+# Plot the overall population size - simulated vs data
+fig, ax = plt.subplots(1, 1)
+res = sim.results
+ax.scatter(data.year, data.n_alive, alpha=0.5, label='Data')
+ax.plot(res.timevec, res.n_alive, color='k', label='Model')
+ax.legend()
+ax.set_title('Population')
+plt.show()
+```
